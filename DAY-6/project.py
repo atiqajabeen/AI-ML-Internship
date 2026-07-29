@@ -1,0 +1,95 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set_style("darkgrid")
+df = pd.read_csv("employee_performance_dataset.csv")
+print(df.shape)
+print(df.head())
+print(df.info())
+dupes = df.duplicated().sum()
+print("duplicate rows found:", dupes)
+df = df.drop_duplicates().reset_index(drop=True)
+print("shape after dropping dupes:", df.shape)
+print(df.isna().sum())
+df["Monthly_Salary"] = df["Monthly_Salary"].astype(str).str.replace(" PKR", "", regex=False)
+df["Monthly_Salary"] = pd.to_numeric(df["Monthly_Salary"], errors="coerce")
+num_cols_to_fill = ["Monthly_Salary", "Attendance_Percent", "Performance_Score", "Training_Hours"]
+for c in num_cols_to_fill:
+    df[c] = df[c].fillna(df[c].median())
+print(df.isna().sum())  
+df = df.drop(columns=["Employee_Signature_Blank"])
+df["Department"] = df["Department"].str.strip().str.title()
+print(df["Department"].unique())
+cap = df["Overtime_Hours"].quantile(0.99)
+df["Overtime_Hours"] = np.where(df["Overtime_Hours"] > cap, cap, df["Overtime_Hours"])
+print(df.describe())
+dept_avg_perf = df.groupby("Department")["Performance_Score"].mean().sort_values(ascending=False)
+print(dept_avg_perf)
+print("best dept:", dept_avg_perf.idxmax())
+low_attendance = df[df["Attendance_Percent"] < 75]
+print(low_attendance[["EmployeeID", "Name", "Attendance_Percent"]])
+df["Performance_Index"] = (
+    df["Performance_Score"] * 0.5
+    + df["Projects_Completed"] * 0.3
+    + df["Attendance_Percent"] * 0.2
+)
+print(df[["EmployeeID", "Performance_Index"]].sort_values("Performance_Index", ascending=False).head(10))
+plt.figure(figsize=(8,5))
+dept_avg_perf.plot(kind="bar", color="teal")
+plt.title("Average Performance Score by Department")
+plt.ylabel("Performance Score")
+plt.tight_layout()
+plt.savefig("chart1_dept_performance.png")
+plt.show()
+plt.figure(figsize=(8,5))
+sns.histplot(df["Monthly_Salary"], bins=20, kde=True, color="orange")
+plt.title("Salary Distribution")
+plt.savefig("chart2_salary_dist.png")
+plt.show()
+plt.figure(figsize=(8,5))
+sns.scatterplot(data=df, x="Experience_Years", y="Performance_Score", hue="Department")
+plt.title("Experience vs Performance")
+plt.savefig("chart3_exp_vs_perf.png")
+plt.show()
+plt.figure(figsize=(8,5))
+sns.boxplot(data=df, x="Department", y="Monthly_Salary")
+plt.xticks(rotation=30)
+plt.title("Salary Spread Across Departments")
+plt.tight_layout()
+plt.savefig("chart4_salary_boxplot.png")
+plt.show()
+plt.figure(figsize=(9,7))
+numeric_df = df.select_dtypes(include=np.number)
+sns.heatmap(numeric_df.corr(), annot=True, cmap="coolwarm", fmt=".2f")
+plt.title("Correlation Heatmap")
+plt.tight_layout()
+plt.savefig("chart5_correlation.png")
+plt.show()
+plt.figure(figsize=(6,6))
+df["Gender"].value_counts().plot(kind="pie", autopct="%1.1f%%")
+plt.title("Gender Distribution")
+plt.ylabel("")
+plt.savefig("chart6_gender_pie.png")
+plt.show()
+plt.figure(figsize=(8,5))
+df.groupby("Age")["Attendance_Percent"].mean().plot(kind="line", marker="o")
+plt.title("Avg Attendance by Age")
+plt.savefig("chart7_attendance_by_age.png")
+plt.show()
+def get_promotion_status(row):
+    if row["Performance_Score"] >= 80 and row["Attendance_Percent"] >= 85:
+        return "Promoted"
+    elif row["Performance_Score"] < 50 or row["Attendance_Percent"] < 60:
+        return "Requires Training"
+    else:
+        return "Needs Improvement"
+df["Promotion_Status"] = df.apply(get_promotion_status, axis=1)
+print(df["Promotion_Status"].value_counts())
+print("=== OBSERVATIONS ===")
+print(f"1. Best performing department: {dept_avg_perf.idxmax()} with avg score {dept_avg_perf.max():.1f}")
+print(f"2. Correlation between experience and performance: {df['Experience_Years'].corr(df['Performance_Score']):.2f}")
+print(f"3. Correlation between attendance and projects completed: {df['Attendance_Percent'].corr(df['Projects_Completed']):.2f}")
+print(f"4. Employees below 75% attendance: {len(low_attendance)}")
+print(f"5. Promotion breakdown: {dict(df['Promotion_Status'].value_counts())}")
+df.to_csv("employee_performance_cleaned.csv", index=False)
