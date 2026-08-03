@@ -215,5 +215,132 @@ def main():
             print("Error:", e)
         except Exception as e:
             print("Something went wrong:", e)
-if __name__ == "__main__":
+def run_console():
     main()
+def run_gradio():
+    import gradio as gr
+    hostel = Hostel()  
+    STUDENT_HEADERS = ["Student ID", "Name", "CNIC", "Contact", "Room"]
+    ROOM_HEADERS = ["Room ID", "Room No.", "Capacity", "Occupied", "Free"]
+    def students_table():
+        rows = []
+        for s in hostel.students:
+            rows.append([s.student_id, s.name, s.cnic, s.contact, s.room_id or "Not allocated"])
+        return rows
+    def rooms_table(room_list):
+        rows = []
+        for r in room_list:
+            rows.append([r.room_id, r.room_number, r.capacity, len(r.occupants),
+                         r.capacity - len(r.occupants)])
+        return rows
+    def register_student_ui(name, cnic, contact):
+        if not name or not cnic or not contact:
+            return "Please fill in all fields.", students_table()
+        try:
+            student = hostel.register_student(name, cnic, contact)
+            return f"Registered! Student ID: {student.student_id}", students_table()
+        except ValueError as e:
+            return f"Error: {e}", students_table()
+    def add_room_ui(number, capacity):
+        if not number or not capacity:
+            return "Please fill in all fields.", rooms_table(hostel.rooms)
+        try:
+            room = hostel.add_room(number, int(capacity))
+            return f"Room added! Room ID: {room.room_id}", rooms_table(hostel.rooms)
+        except ValueError as e:
+            return f"Error: {e}", rooms_table(hostel.rooms)
+    def allocate_room_ui(student_id, room_id):
+        student_id = student_id.strip().upper()
+        room_id = room_id.strip().upper() if room_id else None
+        try:
+            room = hostel.allocate_room(student_id, room_id)
+            msg = f"Allocated room {room.room_number} ({room.room_id}) to {student_id}"
+            return msg, students_table(), rooms_table(hostel.rooms)
+        except ValueError as e:
+            return f"Error: {e}", students_table(), rooms_table(hostel.rooms)
+    def checkout_student_ui(student_id):
+        student_id = student_id.strip().upper()
+        try:
+            old_room = hostel.checkout_student(student_id)
+            msg = f"{student_id} checked out of {old_room}"
+            return msg, students_table(), rooms_table(hostel.rooms)
+        except ValueError as e:
+            return f"Error: {e}", students_table(), rooms_table(hostel.rooms)
+    def search_student_ui(query):
+        if not query:
+            return []
+        results = hostel.search_student(query.strip())
+        rows = []
+        for s in results:
+            rows.append([s.student_id, s.name, s.cnic, s.contact, s.room_id or "Not allocated"])
+        return rows
+    def refresh_available():
+        return rooms_table(hostel.available_rooms())
+    def refresh_occupied():
+        return rooms_table(hostel.occupied_rooms())
+    def get_report_ui():
+        return hostel.generate_report()
+    with gr.Blocks(title="Smart Hostel Room Allocation System") as app:
+        gr.Markdown("# Smart Hostel Room Allocation System")
+        with gr.Tab("Register Student"):
+            name_in = gr.Textbox(label="Name")
+            cnic_in = gr.Textbox(label="CNIC")
+            contact_in = gr.Textbox(label="Contact Number")
+            register_btn = gr.Button("Register")
+            register_msg = gr.Textbox(label="Status", interactive=False)
+            register_table = gr.Dataframe(headers=STUDENT_HEADERS, label="All Students",
+                                           value=students_table())
+            register_btn.click(register_student_ui, inputs=[name_in, cnic_in, contact_in],
+                                outputs=[register_msg, register_table])
+        with gr.Tab("Add Room"):
+            room_no_in = gr.Textbox(label="Room Number (e.g. A-101)")
+            capacity_in = gr.Number(label="Capacity", precision=0)
+            add_room_btn = gr.Button("Add Room")
+            add_room_msg = gr.Textbox(label="Status", interactive=False)
+            add_room_table = gr.Dataframe(headers=ROOM_HEADERS, label="All Rooms",
+                                           value=rooms_table(hostel.rooms))
+            add_room_btn.click(add_room_ui, inputs=[room_no_in, capacity_in],
+                                outputs=[add_room_msg, add_room_table])
+        with gr.Tab("Allocate Room"):
+            alloc_student_in = gr.Textbox(label="Student ID")
+            alloc_room_in = gr.Textbox(label="Room ID (leave blank to auto-pick)")
+            allocate_btn = gr.Button("Allocate")
+            allocate_msg = gr.Textbox(label="Status", interactive=False)
+            alloc_students_table = gr.Dataframe(headers=STUDENT_HEADERS, label="Students",
+                                                 value=students_table())
+            alloc_rooms_table = gr.Dataframe(headers=ROOM_HEADERS, label="Rooms",
+                                              value=rooms_table(hostel.rooms))
+            allocate_btn.click(allocate_room_ui, inputs=[alloc_student_in, alloc_room_in],
+                                outputs=[allocate_msg, alloc_students_table, alloc_rooms_table])
+        with gr.Tab("Checkout Student"):
+            checkout_id_in = gr.Textbox(label="Student ID")
+            checkout_btn = gr.Button("Checkout")
+            checkout_msg = gr.Textbox(label="Status", interactive=False)
+            checkout_students_table = gr.Dataframe(headers=STUDENT_HEADERS, label="Students",
+                                                    value=students_table())
+            checkout_rooms_table = gr.Dataframe(headers=ROOM_HEADERS, label="Rooms",
+                                                 value=rooms_table(hostel.rooms))
+            checkout_btn.click(checkout_student_ui, inputs=[checkout_id_in],
+                                outputs=[checkout_msg, checkout_students_table, checkout_rooms_table])
+        with gr.Tab("Available Rooms"):
+            available_btn = gr.Button("Refresh")
+            available_table = gr.Dataframe(headers=ROOM_HEADERS,
+                                            value=rooms_table(hostel.available_rooms()))
+            available_btn.click(refresh_available, outputs=[available_table])
+        with gr.Tab("Occupied Rooms"):
+            occupied_btn = gr.Button("Refresh")
+            occupied_table = gr.Dataframe(headers=ROOM_HEADERS,
+                                           value=rooms_table(hostel.occupied_rooms()))
+            occupied_btn.click(refresh_occupied, outputs=[occupied_table])
+        with gr.Tab("Search Student"):
+            search_in = gr.Textbox(label="Student ID or Name")
+            search_btn = gr.Button("Search")
+            search_results = gr.Dataframe(headers=STUDENT_HEADERS, label="Results")
+            search_btn.click(search_student_ui, inputs=[search_in], outputs=[search_results])
+        with gr.Tab("Report"):
+            report_btn = gr.Button("Generate Report")
+            report_out = gr.Textbox(label="Summary Report", lines=8, interactive=False)
+            report_btn.click(get_report_ui, outputs=[report_out])
+    app.launch()
+if __name__ == "__main__":
+    run_gradio()
